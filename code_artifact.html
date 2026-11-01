@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>영어 단어 마스터 게임</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+        
+        body {
+            font-family: 'Jua', sans-serif;
+            background-color: #f0fdf4;
+            margin: 0;
+            overflow: hidden; 
+            touch-action: none; 
+        }
+
+        /* ----------------------------------
+           공통 애니메이션 & 스타일
+           ---------------------------------- */
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+        .wrong-shake {
+            animation: shake 0.4s;
+            background-color: #fca5a5 !important; /* 빨간색 경고 */
+            color: #7f1d1d !important;
+            border-color: #ef4444 !important;
+        }
+
+        /* ----------------------------------
+           [1단계] 짝맞추기 게임용 스타일
+           ---------------------------------- */
+        .match-tile {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            user-select: none;
+            word-break: keep-all;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .match-tile:active {
+            transform: scale(0.95);
+        }
+        .match-tile.selected {
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+        }
+        .match-tile.matched {
+            transform: scale(0);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* ----------------------------------
+           [2단계] 2인용 대결 게임용 스타일
+           ---------------------------------- */
+        .vs-tile {
+            transition: transform 0.1s, background-color 0.2s;
+            cursor: pointer;
+            user-select: none;
+            word-break: keep-all;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .vs-tile:active {
+            transform: scale(0.95);
+        }
+        .vs-tile.correct {
+            background-color: #4ade80 !important;
+            color: white !important;
+            transform: scale(1.05);
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        .vs-tile.wrong {
+            animation: shake 0.5s;
+            background-color: #f87171 !important;
+            color: white !important;
+        }
+        
+        .popup {
+            position: absolute;
+            font-size: 2rem;
+            font-weight: bold;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+            z-index: 50;
+        }
+        .popup.plus { color: #16a34a; }
+        .popup.minus { color: #dc2626; }
+
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
+        }
+
+        .divider {
+            width: 4px;
+            background-color: #cbd5e1;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col relative">
+
+    <!-- ==========================================
+         메인 메뉴 화면
+         ========================================== -->
+    <div id="main-menu" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-green-50 backdrop-blur-md">
+        <h1 class="text-7xl text-green-600 mb-4 font-bold drop-shadow-md">단어 마스터</h1>
+        <p class="text-xl text-gray-600 mb-12">재미있게 영어 단어를 학습해 보세요!</p>
+        
+        <div class="flex flex-col gap-6 w-full max-w-md px-6">
+            <button id="btn-practice" class="w-full bg-blue-500 hover:bg-blue-600 text-white text-3xl font-bold py-6 px-8 rounded-3xl shadow-lg transition transform hover:scale-105 active:scale-95 flex flex-col items-center">
+                <span>1단계: 짝맞추기 연습</span>
+                <span class="text-base font-normal mt-2 opacity-90">단어와 뜻을 찾아 짝을 맞춰보세요</span>
+            </button>
+            <button id="btn-versus" class="w-full bg-red-500 hover:bg-red-600 text-white text-3xl font-bold py-6 px-8 rounded-3xl shadow-lg transition transform hover:scale-105 active:scale-95 flex flex-col items-center">
+                <span>2단계: 2인용 대결</span>
+                <span class="text-base font-normal mt-2 opacity-90">친구와 함께 300점을 먼저 달성하세요!</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         1단계: 단어 짝맞추기 연습 화면
+         ========================================== -->
+    <div id="matching-game" class="hidden absolute inset-0 z-40 bg-blue-50 flex flex-col">
+        <!-- 상단 헤더 -->
+        <div class="h-20 bg-white shadow-sm flex items-center justify-between px-8">
+            <button id="btn-match-back" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-full font-bold text-lg transition">
+                ← 메인 메뉴
+            </button>
+            <h2 class="text-3xl text-blue-800 font-bold">단어 짝맞추기 연습</h2>
+            <div class="w-24"></div> <!-- 레이아웃 균형용 -->
+        </div>
+
+        <!-- 게임 영역 -->
+        <div class="flex-grow flex flex-col items-center justify-center p-8">
+            <p class="text-xl text-gray-600 mb-6">영어 단어와 알맞은 한국어 뜻의 짝을 찾아 순서에 상관없이 터치해 보세요!</p>
+            <!-- 6x4 그리드 (총 24개 타일, 12쌍) -->
+            <div id="matching-board" class="grid grid-cols-6 grid-rows-4 gap-4 w-full max-w-6xl h-4/5">
+                <!-- 타일이 JS로 생성됨 -->
+            </div>
+        </div>
+        
+        <!-- 클리어 메시지 오버레이 -->
+        <div id="match-clear-overlay" class="hidden absolute inset-0 bg-white bg-opacity-90 flex flex-col items-center justify-center z-50">
+            <h2 class="text-6xl text-blue-600 font-bold mb-8">모두 찾았습니다! 🎉</h2>
+            <button id="btn-match-restart" class="bg-blue-500 text-white text-2xl font-bold py-4 px-10 rounded-full shadow-lg mb-4 hover:bg-blue-600">다시 연습하기</button>
+            <button id="btn-match-to-vs" class="bg-red-500 text-white text-2xl font-bold py-4 px-10 rounded-full shadow-lg hover:bg-red-600">2인용 대결하러 가기</button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         2단계: 2인용 매칭 대결 화면
+         ========================================== -->
+    <div id="versus-game" class="hidden absolute inset-0 z-40 flex flex-col bg-gray-50">
+        
+        <!-- 2인용 대결 종료 오버레이 -->
+        <div id="vs-end-overlay" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center bg-white bg-opacity-90 backdrop-blur-sm">
+            <div id="vs-result-message" class="text-5xl text-gray-800 mb-8 font-bold text-center leading-tight"></div>
+            <div class="flex gap-4">
+                <button id="btn-vs-restart" class="bg-green-500 hover:bg-green-600 text-white text-2xl font-bold py-4 px-10 rounded-full shadow-lg transition transform hover:scale-105 active:scale-95">
+                    다시 대결하기
+                </button>
+                <button id="btn-vs-back" class="bg-gray-500 hover:bg-gray-600 text-white text-2xl font-bold py-4 px-10 rounded-full shadow-lg transition transform hover:scale-105 active:scale-95">
+                    메인 메뉴
+                </button>
+            </div>
+        </div>
+
+        <!-- 상단 정보 영역 -->
+        <div class="h-1/5 w-full bg-white shadow-md flex items-center justify-between px-8 relative z-20">
+            <!-- Player 1 -->
+            <div class="flex flex-col items-center w-1/4">
+                <span class="text-2xl text-blue-600 font-bold mb-2">Player 1 (왼쪽)</span>
+                <div class="bg-blue-100 px-6 py-2 rounded-2xl border-4 border-blue-300">
+                    <span class="text-4xl font-bold text-blue-800" id="score1">0</span><span class="text-2xl text-blue-800 ml-1">점</span>
+                </div>
+            </div>
+
+            <!-- 중앙 문제 -->
+            <div class="flex flex-col items-center w-2/4 relative">
+                <button id="btn-vs-menu-ingame" class="absolute -top-4 -left-12 text-sm bg-gray-200 px-3 py-1 rounded-full text-gray-700">메뉴로</button>
+                <span class="text-xl text-gray-500 mb-1">다음 단어의 짝을 찾아 터치하세요!</span>
+                <div id="target-word-container" class="bg-yellow-100 border-4 border-yellow-400 rounded-2xl px-12 py-4 shadow-inner flex flex-col items-center justify-center min-w-[320px] min-h-[120px]">
+                    <span id="target-word" class="text-5xl font-black text-gray-800 tracking-wider text-center word-break-keep">READY</span>
+                </div>
+                <div class="mt-2 text-lg text-gray-600">
+                    진행: <span id="current-count" class="font-bold text-red-500">0</span> / <span id="total-count">40</span>
+                </div>
+            </div>
+
+            <!-- Player 2 -->
+            <div class="flex flex-col items-center w-1/4">
+                <span class="text-2xl text-red-600 font-bold mb-2">Player 2 (오른쪽)</span>
+                <div class="bg-red-100 px-6 py-2 rounded-2xl border-4 border-red-300">
+                    <span class="text-4xl font-bold text-red-800" id="score2">0</span><span class="text-2xl text-red-800 ml-1">점</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 게임 보드 영역 -->
+        <div class="h-4/5 w-full flex relative">
+            <!-- Player 1 보드 -->
+            <div class="w-1/2 h-full p-4 flex flex-col">
+                <div id="board1" class="grid grid-cols-5 grid-rows-4 gap-2 w-full h-full flex-grow"></div>
+            </div>
+
+            <!-- 중앙 분할선 -->
+            <div class="divider h-full"></div>
+
+            <!-- Player 2 보드 -->
+            <div class="w-1/2 h-full p-4 flex flex-col">
+                <div id="board2" class="grid grid-cols-5 grid-rows-4 gap-2 w-full h-full flex-grow"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         JavaScript 로직
+         ========================================== -->
+    <script>
+        // 단어와 품사별 뜻
+        const wordData = [
+            { en: "altar", ko: "n. 제단" },
+            { en: "burn", ko: "v. 태우다" },
+            { en: "celebrate", ko: "v. 축하하다, 기념하다" },
+            { en: "costume", ko: "n. 의상, 복장" },
+            { en: "decorate", ko: "v. 장식하다, 꾸미다" },
+            { en: "fireworks", ko: "n. 불꽃놀이" },
+            { en: "giant", ko: "a. 거대한" },
+            { en: "matter", ko: "v. 중요하다" },
+            { en: "parade", ko: "n. 퍼레이드, 행진" },
+            { en: "participate", ko: "v. 참여하다" },
+            { en: "pole", ko: "n. 기둥, 막대기" },
+            { en: "possible", ko: "a. 가능한" },
+            { en: "puzzle", ko: "n. 퍼즐" },
+            { en: "recipe", ko: "n. 요리법" },
+            { en: "reindeer", ko: "n. 순록" },
+            { en: "skeleton", ko: "n. 해골" },
+            { en: "statue", ko: "n. 조각상" },
+            { en: "symbolize", ko: "v. 상징하다" },
+            { en: "take place", ko: "개최되다, 열리다" }
+        ];
+
+        // 유틸리티: 배열 섞기 (Fisher-Yates)
+        function shuffle(array) {
+            let currentIndex = array.length, randomIndex;
+            while (currentIndex != 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        // 화면 전환 함수
+        function showScreen(screenId) {
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('matching-game').classList.add('hidden');
+            document.getElementById('versus-game').classList.add('hidden');
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        // ==========================================
+        // 1단계: 짝맞추기 연습 로직
+        // ==========================================
+        let matchFirstSelected = null;
+        let matchFoundCount = 0;
+        const MATCH_TOTAL_PAIRS = 12; // 12쌍 (24칸 타일)
+        let isMatchProcessing = false;
+
+        function startMatchingGame() {
+            showScreen('matching-game');
+            document.getElementById('match-clear-overlay').classList.add('hidden');
+            
+            matchFirstSelected = null;
+            matchFoundCount = 0;
+            isMatchProcessing = false;
+
+            // 단어 중 12개를 랜덤으로 선택하여 24개의 타일 생성
+            const selectedWords = shuffle([...wordData]).slice(0, MATCH_TOTAL_PAIRS);
+            let tilesData = [];
+            
+            selectedWords.forEach(w => {
+                tilesData.push({ id: w.en, text: w.en, lang: 'en' }); // 영어 타일
+                tilesData.push({ id: w.en, text: w.ko, lang: 'ko' }); // 한국어 타일
+            });
+            
+            tilesData = shuffle(tilesData); // 생성된 24개 타일을 무작위로 섞음
+
+            const board = document.getElementById('matching-board');
+            board.innerHTML = '';
+
+            tilesData.forEach(data => {
+                const tile = document.createElement('div');
+                // 기존의 고정된 text-2xl 클래스를 제거하고, 글자 길이에 따라 동적으로 추가합니다.
+                tile.className = "match-tile bg-white border-4 border-blue-200 rounded-2xl flex items-center justify-center text-center p-2 font-bold text-gray-800 break-words";
+                
+                // 글자 수에 따른 폰트 크기 동적 조절 (영어, 한국어 모두 적용)
+                if (data.text.length > 20) {
+                    tile.classList.add('text-xs', 'sm:text-sm'); // 아주 긴 단어 (예: under the watchful eye of)
+                } else if (data.text.length > 10) {
+                    tile.classList.add('text-sm', 'sm:text-base'); // 적당히 긴 단어
+                } else {
+                    tile.classList.add('text-xl', 'sm:text-2xl'); // 짧은 단어
+                }
+
+                tile.textContent = data.text;
+                tile.dataset.id = data.id;
+                tile.dataset.lang = data.lang;
+
+                // 클릭 및 터치 이벤트
+                tile.addEventListener('mousedown', () => handleMatchTileClick(tile));
+                tile.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    handleMatchTileClick(tile);
+                }, { passive: false });
+
+                board.appendChild(tile);
+            });
+        }
+
+        function handleMatchTileClick(tile) {
+            // 이미 처리중이거나, 맞춰서 사라진 타일이거나, 방금 선택한 타일이면 무시
+            if (isMatchProcessing || tile.classList.contains('matched') || tile === matchFirstSelected) return;
+
+            // 선택 효과 추가
+            tile.classList.add('selected', 'bg-blue-100', 'border-blue-500');
+
+            if (!matchFirstSelected) {
+                // 첫 번째 선택
+                matchFirstSelected = tile;
+            } else {
+                // 두 번째 선택 후 비교
+                isMatchProcessing = true;
+                const matchSecondSelected = tile;
+
+                // 고유 ID(영어단어)가 같고, 언어가 다르면(순서 상관없이 짝이 맞으면) 정답!
+                if (matchFirstSelected.dataset.id === matchSecondSelected.dataset.id && 
+                    matchFirstSelected.dataset.lang !== matchSecondSelected.dataset.lang) {
+                    
+                    // 정답 시 (잠시 후 사라짐)
+                    setTimeout(() => {
+                        matchFirstSelected.classList.add('matched');
+                        matchSecondSelected.classList.add('matched');
+                        resetMatchSelection(matchFirstSelected, matchSecondSelected);
+                        
+                        matchFoundCount++;
+                        if (matchFoundCount === MATCH_TOTAL_PAIRS) {
+                            setTimeout(() => {
+                                document.getElementById('match-clear-overlay').classList.remove('hidden');
+                            }, 300);
+                        }
+                        isMatchProcessing = false;
+                    }, 400);
+
+                } else {
+                    // 오답 시 (선택된 타일을 변수에 저장해두고 애니메이션 처리)
+                    const firstTile = matchFirstSelected;
+                    const secondTile = matchSecondSelected;
+
+                    setTimeout(() => {
+                        firstTile.classList.add('wrong-shake');
+                        secondTile.classList.add('wrong-shake');
+                        
+                        setTimeout(() => {
+                            firstTile.classList.remove('wrong-shake');
+                            secondTile.classList.remove('wrong-shake');
+                            resetMatchSelection(firstTile, secondTile);
+                            isMatchProcessing = false;
+                        }, 400);
+                    }, 200);
+                }
+            }
+        }
+
+        function resetMatchSelection(tile1, tile2) {
+            tile1.classList.remove('selected', 'bg-blue-100', 'border-blue-500');
+            tile2.classList.remove('selected', 'bg-blue-100', 'border-blue-500');
+            matchFirstSelected = null;
+        }
+
+        // ==========================================
+        // 2단계: 2인용 대결 게임 로직
+        // ==========================================
+        let score1 = 0, score2 = 0;
+        let vsCurrentQuestion = null;
+        let vsGameActive = false;
+        let vsRemainingQuestions = [];
+        const VS_TOTAL_QUESTIONS = wordData.length * 2;
+        const WINNING_SCORE = 300;
+
+        const score1El = document.getElementById('score1');
+        const score2El = document.getElementById('score2');
+        const targetWordEl = document.getElementById('target-word');
+        const board1El = document.getElementById('board1');
+        const board2El = document.getElementById('board2');
+        const currentCountEl = document.getElementById('current-count');
+
+        function startVsGame() {
+            showScreen('versus-game');
+            document.getElementById('vs-end-overlay').classList.add('hidden');
+            
+            score1 = 0;
+            score2 = 0;
+            updateScores();
+            
+            // 모든 단어를 '영어->한국어'와 '한국어->영어' 문제로 한 번씩 출제
+            let enToKo = wordData.map(w => ({ type: 'en_to_ko', target: w.en, answer: w.en }));
+            let koToEn = wordData.map(w => ({ type: 'ko_to_en', target: w.ko, answer: w.en }));
+            
+            // 총 40문제를 합치고 섞음
+            vsRemainingQuestions = shuffle([...enToKo, ...koToEn]);
+            
+            nextVsQuestion();
+        }
+
+        function createVsTile(wordObj, playerIndex, questionType) {
+            const tile = document.createElement('div');
+            
+            const bgColors = playerIndex === 1 ? ['bg-blue-50', 'bg-blue-100'] : ['bg-red-50', 'bg-red-100'];
+            const borderColor = playerIndex === 1 ? 'border-blue-200' : 'border-red-200';
+            const textColor = playerIndex === 1 ? 'text-blue-900' : 'text-red-900';
+            const randomBg = bgColors[Math.floor(Math.random() * bgColors.length)];
+
+            tile.className = `vs-tile ${randomBg} border-2 ${borderColor} rounded-xl flex flex-col justify-center items-center h-full w-full p-1 sm:p-2 text-center break-words`;
+            tile.dataset.id = wordObj.en; // 정답 판별용 고유 ID
+
+            if (questionType === 'en_to_ko') {
+                // 목표가 영어 -> 타일은 한국어 뜻
+                if (wordObj.ko.length > 15) {
+                    tile.classList.add('text-xs', 'sm:text-sm', 'text-gray-800');
+                } else {
+                    tile.classList.add('text-sm', 'sm:text-base', 'lg:text-lg', 'text-gray-800');
+                }
+
+                const parts = wordObj.ko.split('. ');
+                if(parts.length > 1) {
+                    tile.innerHTML = `<span class="text-xs opacity-70 mr-1">${parts[0]}.</span><br class="block sm:hidden">${parts[1]}`;
+                } else {
+                    tile.textContent = wordObj.ko;
+                }
+            } else {
+                // 목표가 한국어 뜻 -> 타일은 영어
+                if (wordObj.en.length > 20) {
+                    tile.classList.add('text-[10px]', 'sm:text-xs', 'font-bold', textColor);
+                } else if (wordObj.en.length > 10) {
+                    tile.classList.add('text-xs', 'sm:text-sm', 'font-bold', textColor);
+                } else {
+                    tile.classList.add('text-base', 'sm:text-lg', 'lg:text-xl', 'font-bold', textColor);
+                }
+                tile.textContent = wordObj.en;
+            }
+
+            tile.addEventListener('mousedown', (e) => handleVsTileClick(e, tile, wordObj, playerIndex));
+            tile.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                handleVsTileClick(e.touches[0], tile, wordObj, playerIndex);
+            }, { passive: false });
+
+            return tile;
+        }
+
+        function initVsBoards(questionType) {
+            board1El.innerHTML = '';
+            board2El.innerHTML = '';
+            
+            // 모든 단어를 보드에 중복 없이 배치
+            const words1 = shuffle([...wordData]);
+            const words2 = shuffle([...wordData]);
+
+            words1.forEach(word => board1El.appendChild(createVsTile(word, 1, questionType)));
+            words2.forEach(word => board2El.appendChild(createVsTile(word, 2, questionType)));
+        }
+
+        function handleVsTileClick(event, tile, wordObj, playerIndex) {
+            if (!vsGameActive || tile.classList.contains('correct')) return;
+
+            const x = event.clientX || event.pageX;
+            const y = event.clientY || event.pageY;
+
+            if (wordObj.en === vsCurrentQuestion.answer) {
+                // 정답 (+20점)
+                updateVsScore(playerIndex, 20);
+                showPopup(x, y, '+20', true);
+                
+                // 양쪽 보드의 정답 타일 시각적 비활성화
+                document.querySelectorAll('.vs-tile').forEach(t => {
+                    if(t.dataset.id === vsCurrentQuestion.answer) t.classList.add('correct');
+                });
+
+                // 승리 조건 체크 (300점 선취)
+                if (score1 >= WINNING_SCORE || score2 >= WINNING_SCORE) {
+                    vsGameActive = false;
+                    targetWordEl.classList.add('text-green-500', 'scale-110');
+                    setTimeout(() => {
+                        targetWordEl.classList.remove('text-green-500', 'scale-110');
+                        endVsGame();
+                    }, 800);
+                    return;
+                }
+
+                // 다음 문제 대기 및 타일 재배열
+                vsGameActive = false;
+                targetWordEl.classList.add('text-green-500', 'scale-110');
+                setTimeout(() => {
+                    targetWordEl.classList.remove('text-green-500', 'scale-110');
+                    nextVsQuestion();
+                }, 800);
+
+            } else {
+                // 오답 (-10점)
+                updateVsScore(playerIndex, -10);
+                showPopup(x, y, '-10', false);
+                
+                tile.classList.remove('wrong');
+                void tile.offsetWidth; // 애니메이션 리셋
+                tile.classList.add('wrong');
+                setTimeout(() => tile.classList.remove('wrong'), 500);
+            }
+        }
+
+        function updateVsScore(playerIndex, amount) {
+            if (playerIndex === 1) score1 += amount;
+            else score2 += amount;
+            updateScores();
+        }
+        
+        function updateScores() {
+            score1El.textContent = score1;
+            score2El.textContent = score2;
+        }
+
+        function showPopup(x, y, text, isPlus) {
+            const popup = document.createElement('div');
+            popup.className = `popup ${isPlus ? 'plus' : 'minus'}`;
+            popup.textContent = text;
+            popup.style.left = `${x - 20}px`;
+            popup.style.top = `${y - 20}px`;
+            document.body.appendChild(popup);
+            setTimeout(() => popup.remove(), 1000);
+        }
+
+        function nextVsQuestion() {
+            if (vsRemainingQuestions.length === 0) {
+                endVsGame();
+                return;
+            }
+
+            vsCurrentQuestion = vsRemainingQuestions.pop();
+            targetWordEl.textContent = vsCurrentQuestion.target;
+            
+            // 중앙 텍스트 길이에 따른 크기 자동 조정 (영어/한국어 모두 적용)
+            if (vsCurrentQuestion.type === 'ko_to_en') {
+                targetWordEl.className = "font-black text-gray-800 text-center break-keep transition-all duration-300";
+                if(vsCurrentQuestion.target.length > 15) targetWordEl.classList.add('text-2xl', 'md:text-3xl');
+                else if(vsCurrentQuestion.target.length > 10) targetWordEl.classList.add('text-3xl', 'md:text-4xl');
+                else targetWordEl.classList.add('text-4xl', 'md:text-5xl');
+            } else {
+                targetWordEl.className = "font-black text-gray-800 tracking-wider text-center transition-all duration-300 break-words";
+                if (vsCurrentQuestion.target.length > 20) targetWordEl.classList.add('text-2xl', 'md:text-3xl');
+                else if (vsCurrentQuestion.target.length > 10) targetWordEl.classList.add('text-4xl', 'md:text-5xl');
+                else targetWordEl.classList.add('text-5xl', 'md:text-6xl');
+            }
+
+            const currentQNumber = VS_TOTAL_QUESTIONS - vsRemainingQuestions.length;
+            currentCountEl.textContent = currentQNumber;
+            
+            // 타일 재배열 및 화면 갱신
+            initVsBoards(vsCurrentQuestion.type);
+            
+            targetWordEl.parentElement.classList.add('scale-105', 'bg-yellow-200');
+            setTimeout(() => {
+                targetWordEl.parentElement.classList.remove('scale-105', 'bg-yellow-200');
+                vsGameActive = true;
+            }, 150);
+        }
+
+        function endVsGame() {
+            vsGameActive = false;
+            targetWordEl.textContent = "FINISH";
+            
+            let resultText = "";
+            if (score1 >= WINNING_SCORE && score1 > score2) {
+                resultText = `🎉 Player 1 <span class="text-3xl text-red-500 block mt-2">300점 선취 승리!</span> 🎉`;
+            } else if (score2 >= WINNING_SCORE && score2 > score1) {
+                resultText = `🎉 Player 2 <span class="text-3xl text-red-500 block mt-2">300점 선취 승리!</span> 🎉`;
+            } else if (score1 > score2) {
+                resultText = `🎉 Player 1 승리! 🎉`;
+            } else if (score2 > score1) {
+                resultText = `🎉 Player 2 승리! 🎉`;
+            } else {
+                resultText = `🤝 무승부! 🤝`;
+            }
+            
+            resultText += `<br><span class="text-3xl mt-6 block text-gray-700 bg-gray-100 rounded-full py-2">${score1}점 vs ${score2}점</span>`;
+
+            document.getElementById('vs-result-message').innerHTML = resultText;
+            document.getElementById('vs-end-overlay').classList.remove('hidden');
+        }
+
+        // 이벤트 리스너 등록
+        document.getElementById('btn-practice').addEventListener('click', startMatchingGame);
+        document.getElementById('btn-versus').addEventListener('click', startVsGame);
+        
+        document.getElementById('btn-match-back').addEventListener('click', () => showScreen('main-menu'));
+        document.getElementById('btn-match-restart').addEventListener('click', startMatchingGame);
+        document.getElementById('btn-match-to-vs').addEventListener('click', startVsGame);
+
+        document.getElementById('btn-vs-back').addEventListener('click', () => showScreen('main-menu'));
+        document.getElementById('btn-vs-restart').addEventListener('click', startVsGame);
+        document.getElementById('btn-vs-menu-ingame').addEventListener('click', () => {
+            if(confirm("게임을 중단하고 메뉴로 돌아가시겠습니까?")) showScreen('main-menu');
+        });
+
+    </script>
+</body>
+</html>
